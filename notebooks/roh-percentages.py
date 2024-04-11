@@ -1,182 +1,76 @@
 # Databricks notebook source
-# MAGIC %pip install census
-# MAGIC %pip install us
-# MAGIC %pip install numpy
+from pyspark.sql import SparkSession
+spark = SparkSession.builder.getOrCreate()
+
+selected_table = 'S2502'
 
 # COMMAND ----------
 
-from census import Census
-from us import states
-import numpy as np
-
-c = Census("33e4cdca31227ea08bbeef5c8edb6df7909018c7", year=2021)
-
-# COMMAND ----------
-
-import pandas as pd
-
-data = {
-    'Column Name': [
-        'S2502_C05_001E',
-        'S2502_C05_010E',
-        'S2502_C05_003E',
-        'S2502_C05_009E',
-        'S2502_C05_005E',
-        'S2502_C05_008E',
-        'S2502_C05_004E',
-        'S2502_C05_006E',
-        'S2502_C05_007E',
-    ],
-    'Label': [
-        'Renter-occupied housing units',
-        'White alone, not Hispanic or Latino',
-        'Black or African American',
-        'Hispanic or Latino origin',
-        'Asian',
-        'Two or more races',
-        'American Indian and Alaska Native',
-        'Native Hawaiian and Other Pacific Islander',
-        'Some other race',
-    ]
-}
-
-labels = pd.DataFrame(data)
-labels
+# MAGIC %sql
+# MAGIC use catalog census;
+# MAGIC create schema if not exists occupied_housing_units;
+# MAGIC use schema occupied_housing_units;
 
 # COMMAND ----------
 
-# Get US / MI data for demographics
-# Get US / MI data for % ROH units
-# Either 27% of renter occupied housing units are black / or 57% of black occupied housing units are renters (report)
+view_name = 'roh_percentage_total'
+query = f"""
+CREATE VIEW IF NOT EXISTS {view_name} AS
+SELECT
+    clean.table_{selected_table}.micro_area as micro_area,
+    clean.table_{selected_table}.metro_area as metro_area,
+    clean.table_{selected_table}.county as county,
+    clean.table_{selected_table}.state as state,
+    clean.table_{selected_table}.country as country,
+    clean.table_{selected_table}.renter_occupied_housing_units_for_occupied_housing_units as roh_units,
+    clean.table_{selected_table}.occupied_housing_units_for_occupied_housing_units as oh_units,
+    roh_units / oh_units as roh_percentage
+FROM clean.table_{selected_table}
 
-roh_mi_county_data = c.acs5st.state_county((
-    'NAME',
-    'S2502_C05_001E',
-    'S2502_C05_010E',
-    'S2502_C05_003E',
-    'S2502_C05_009E',
-    'S2502_C05_005E',
-    'S2502_C05_008E',
-    'S2502_C05_004E',
-    'S2502_C05_006E',
-    'S2502_C05_007E',
-), states.MI.fips, '*')
-
-oh_mi_county_data = c.acs5st.state_county((
-    'NAME',
-    'S2502_C01_001E',
-    'S2502_C01_010E',
-    'S2502_C01_003E',
-    'S2502_C01_009E',
-    'S2502_C01_005E',
-    'S2502_C01_008E',
-    'S2502_C01_004E',
-    'S2502_C01_006E',
-    'S2502_C01_007E',
-), states.MI.fips, '*')
-
-roh_mi_county_df = pd.DataFrame(roh_mi_county_data)
-oh_mi_county_df = pd.DataFrame(oh_mi_county_data)
-
-roh_mi_county = roh_mi_county_df.drop(['state', 'county'], axis=1)
-oh_mi_county = oh_mi_county_df.drop(['state', 'county'], axis=1)
-
-roh_mi_county_column_names = [col for col in roh_mi_county.columns if col != 'NAME']
-oh_mi_county_column_names = [col for col in oh_mi_county.columns if col != 'NAME']
-
-mi_county = roh_mi_county.copy()
-mi_county[roh_mi_county_column_names] = np.divide(roh_mi_county[roh_mi_county_column_names], oh_mi_county[oh_mi_county_column_names]).multiply(100).round(2)
-
-mi_county
+"""
+spark.sql(query)
 
 # COMMAND ----------
 
-roh_mi_data = c.acs5st.state((
-    'NAME',
-    'S2502_C05_001E',
-    'S2502_C05_010E',
-    'S2502_C05_003E',
-    'S2502_C05_009E',
-    'S2502_C05_005E',
-    'S2502_C05_008E',
-    'S2502_C05_004E',
-    'S2502_C05_006E',
-    'S2502_C05_007E',
-), states.MI.fips)
+view_name = 'roh_percentage_race'
+query = f"""
+CREATE VIEW IF NOT EXISTS {view_name} AS
+SELECT
+    clean.table_{selected_table}.micro_area as micro_area,
+    clean.table_{selected_table}.metro_area as metro_area,
+    clean.table_{selected_table}.county as county,
+    clean.table_{selected_table}.state as state,
+    clean.table_{selected_table}.country as country,
+    
+    clean.table_{selected_table}.renter_occupied_housing_units_for_white as roh_white,
+    clean.table_{selected_table}.renter_occupied_housing_units_for_black_or_african_american as roh_black,
+    clean.table_{selected_table}.renter_occupied_housing_units_for_american_indian_and_alaska_native as roh_native_american,
+    clean.table_{selected_table}.renter_occupied_housing_units_for_asian as roh_asian,
+    clean.table_{selected_table}.renter_occupied_housing_units_for_native_hawaiian_and_other_pacific_islander as roh_hawaiian,
+    clean.table_{selected_table}.renter_occupied_housing_units_for_some_other_race as roh_other,
+    clean.table_{selected_table}.renter_occupied_housing_units_for_two_or_more_races as roh_two_or_more,
+    clean.table_{selected_table}.renter_occupied_housing_units_for_hispanic_or_latino_origin as roh_hispanic,
+    clean.table_{selected_table}.renter_occupied_housing_units_for_white_alone_not_hispanic_or_latino as roh_white_alone,
 
-oh_mi_data = c.acs5st.state((
-    'NAME',
-    'S2502_C01_001E',
-    'S2502_C01_010E',
-    'S2502_C01_003E',
-    'S2502_C01_009E',
-    'S2502_C01_005E',
-    'S2502_C01_008E',
-    'S2502_C01_004E',
-    'S2502_C01_006E',
-    'S2502_C01_007E',
-), states.MI.fips)
-
-roh_mi_df = pd.DataFrame(roh_mi_data)
-oh_mi_df = pd.DataFrame(oh_mi_data)
-
-roh_mi = roh_mi_df.drop(['state'], axis=1)
-oh_mi = oh_mi_df.drop(['state'], axis=1)
-
-roh_mi_column_names = [col for col in roh_mi.columns if col != 'NAME']
-oh_mi_column_names = [col for col in oh_mi.columns if col != 'NAME']
-
-mi = roh_mi.copy()
-mi[roh_mi_column_names] = np.divide(roh_mi[roh_mi_column_names], oh_mi[oh_mi_column_names]).multiply(100).round(2)
-
-mi
-
-# COMMAND ----------
-
-roh_us_data = c.acs5st.us((
-    'NAME',
-    'S2502_C05_001E',
-    'S2502_C05_010E',
-    'S2502_C05_003E',
-    'S2502_C05_009E',
-    'S2502_C05_005E',
-    'S2502_C05_008E',
-    'S2502_C05_004E',
-    'S2502_C05_006E',
-    'S2502_C05_007E',
-))
-
-oh_us_data = c.acs5st.us((
-    'NAME',
-    'S2502_C01_001E',
-    'S2502_C01_010E',
-    'S2502_C01_003E',
-    'S2502_C01_009E',
-    'S2502_C01_005E',
-    'S2502_C01_008E',
-    'S2502_C01_004E',
-    'S2502_C01_006E',
-    'S2502_C01_007E',
-))
-
-roh_us_df = pd.DataFrame(roh_us_data)
-oh_us_df = pd.DataFrame(oh_us_data)
-
-roh_us = roh_us_df.drop(['us'], axis=1)
-oh_us = oh_us_df.drop(['us'], axis=1)
-
-roh_us_column_names = [col for col in roh_us.columns if col != 'NAME']
-oh_us_column_names = [col for col in oh_us.columns if col != 'NAME']
-
-us = roh_us.copy()
-us[roh_us_column_names] = np.divide(roh_us[roh_us_column_names], oh_us[oh_us_column_names]).multiply(100).round(2)
-
-us_mi = us.append(mi, ignore_index=True)
-
-attachment1 = us_mi.append(mi_county, ignore_index=True)
-
-attachment1
-
-# COMMAND ----------
-
-
+    clean.table_{selected_table}.occupied_housing_units_for_white as oh_white,
+    clean.table_{selected_table}.occupied_housing_units_for_black_or_african_american as oh_black,
+    clean.table_{selected_table}.occupied_housing_units_for_american_indian_and_alaska_native as oh_native_american,
+    clean.table_{selected_table}.occupied_housing_units_for_asian as oh_asian,
+    clean.table_{selected_table}.occupied_housing_units_for_native_hawaiian_and_other_pacific_islander as oh_hawaiian,
+    clean.table_{selected_table}.occupied_housing_units_for_some_other_race as oh_other,
+    clean.table_{selected_table}.occupied_housing_units_for_two_or_more_races as oh_two_or_more,
+    clean.table_{selected_table}.occupied_housing_units_for_hispanic_or_latino_origin as oh_hispanic,
+    clean.table_{selected_table}.occupied_housing_units_for_white_alone_not_hispanic_or_latino as oh_white_alone,
+    
+    roh_white / oh_white as roh_percentage_white,
+    roh_black / oh_black as roh_percentage_black,
+    roh_native_american / oh_native_american as roh_percentage_native_american,
+    roh_asian / oh_asian as roh_percentage_asian,
+    roh_hawaiian / oh_hawaiian as roh_percentage_hawaiian,
+    roh_other / oh_other as roh_percentage_other,
+    roh_two_or_more / oh_two_or_more as roh_percentage_two_or_more,
+    roh_hispanic / oh_hispanic as roh_percentage_hispanic,
+    roh_white_alone / oh_white_alone as roh_percentage_white_alone
+FROM clean.table_{selected_table}
+"""
+spark.sql(query)
